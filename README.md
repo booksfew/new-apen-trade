@@ -1,4 +1,4 @@
-# TraderSheild Journal
+# TradeShield Journal
 
 Hostinger-compatible PHP/MySQL foundation for a manual trading journal. Broker connections, real payment processing, email verification, and external market predictions are not implemented.
 

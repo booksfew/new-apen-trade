@@ -246,6 +246,18 @@ function showPage(name) {
   });
 }
 
+function setAuthMode(mode) {
+  state.authMode = mode;
+  document.querySelectorAll('.auth-toggle button').forEach(tab => tab.classList.toggle('active', tab.dataset.authMode === mode));
+  document.getElementById('authSubmit').textContent = mode === 'register' ? 'Create account' : 'Sign in';
+  document.getElementById('authPassword').autocomplete = mode === 'register' ? 'new-password' : 'current-password';
+  document.querySelectorAll('[data-register-only]').forEach(field => {
+    field.hidden = mode !== 'register';
+    field.querySelector('input').required = mode === 'register';
+  });
+  clearAuthMessage();
+}
+
 function formatMoney(value) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value) || 0);
 }
@@ -500,6 +512,7 @@ function resetTradeForm() {
 document.querySelectorAll('.nav-item, [data-page]').forEach(button => {
   button.addEventListener('click', event => {
     event.preventDefault();
+    if (button.dataset.page === 'auth' && !state.user) setAuthMode('login');
     showPage(button.dataset.page);
   });
 });
@@ -573,17 +586,7 @@ document.querySelectorAll('[data-close-modal]').forEach(button => {
 });
 
 document.querySelectorAll('.auth-toggle button').forEach(button => {
-  button.addEventListener('click', () => {
-    state.authMode = button.dataset.authMode;
-    document.querySelectorAll('.auth-toggle button').forEach(tab => tab.classList.toggle('active', tab === button));
-    document.getElementById('authSubmit').textContent = state.authMode === 'register' ? 'Create account' : 'Sign in';
-    document.getElementById('authPassword').autocomplete = state.authMode === 'register' ? 'new-password' : 'current-password';
-    document.querySelectorAll('[data-register-only]').forEach(field => {
-      field.hidden = state.authMode !== 'register';
-      field.querySelector('input').required = state.authMode === 'register';
-    });
-    clearAuthMessage();
-  });
+  button.addEventListener('click', () => setAuthMode(button.dataset.authMode));
 });
 
 document.getElementById('authForm').addEventListener('submit', async event => {
