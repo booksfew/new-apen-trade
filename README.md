@@ -32,7 +32,8 @@ The local workspace does not contain live Hostinger credentials. A database must
 ## Features in this release
 
 - Email and password registration/login using PHP sessions and password hashing
-- User-owned manual accounts, trade journal records, dashboard totals, and saved risk preferences
+- User-owned profile, manual accounts, trade journal records, dashboard totals, saved risk preferences, and date-range P/L analytics
+- Global search across navigation pages and the signed-in user's accounts/trades
 - MySQL prepared statements, CSRF token checks on mutations, and user ownership checks
 
 Risk settings are stored for review; they do not block or execute trades. Account entries are manual and never connect to a broker. The game and other preview-only pages are simulations. Pricing buttons do not charge money.

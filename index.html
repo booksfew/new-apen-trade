@@ -255,6 +255,7 @@
           <div class="top-actions">
             <button class="ghost-btn" data-page="notifications">Notifications</button>
             <button class="primary-btn" id="authAction" data-page="auth">Log in</button>
+            <button class="ghost-btn" id="logoutBtn" type="button" hidden>Log out</button>
           </div>
         </header>
 
@@ -301,7 +302,7 @@
 
         <section class="page" data-page-name="dashboard">
           <div class="page-header">
-            <div><h1>Dashboard</h1><p>Manual journal overview. No broker connection or live account balance is available.</p></div>
+            <div><h1>Account Overview</h1><p>Manual journal overview. No broker connection or live account balance is available.</p></div>
             <div class="account-selector"><label for="dashboardAccount" class="muted">Account</label><select id="dashboardAccount"><option value="all">All accounts</option></select></div>
           </div>
           <div class="card-grid four">
@@ -394,7 +395,7 @@
           <div class="page-header"><div><h1>Settings</h1><p>Update your profile and account details.</p></div></div>
           <div class="card-grid two">
             <div class="panel"><h3>Profile</h3><form id="profileForm" class="field-grid"><div class="field"><label for="profileDisplayName">Display name</label><input id="profileDisplayName" type="text" maxlength="80" required /></div><div class="field"><label for="profileEmail">Email</label><input id="profileEmail" type="email" readonly /></div><div class="field"><label for="profileTimezone">Timezone</label><select id="profileTimezone"><option value="UTC">UTC</option><option value="Asia/Dhaka">Dhaka (UTC+6)</option><option value="America/New_York">New York</option><option value="Europe/London">London</option></select></div><div class="field"><label for="profileCurrency">Base currency</label><select id="profileCurrency"><option>USD</option><option>EUR</option><option>GBP</option><option>BDT</option></select></div><div id="profileMessage" class="status-banner" role="status" hidden></div><button class="primary-btn" id="saveProfileBtn" type="submit">Save profile</button></form></div>
-            <div class="panel"><h3>Account</h3><div class="support-item">Trading accounts are manual journal entries. No broker is connected.</div><button class="danger-btn" id="logoutBtn" type="button" hidden>Log out</button></div>
+            <div class="panel"><h3>Account</h3><div class="support-item">Trading accounts are manual journal entries. No broker is connected.</div></div>
           </div>
         </section>
 
