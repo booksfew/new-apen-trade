@@ -14,6 +14,7 @@ Opening `index.html` directly from disk enables a browser-session preview for si
 
 1. Create a MySQL database and database user in hPanel, and grant the user access to the database.
 2. Import `schema.sql` into that database using phpMyAdmin.
+	If you imported an earlier schema already, run `ALTER TABLE risk_settings ADD COLUMN last_changed_date DATE NULL;` once before deploying this version.
 3. Copy `config.example.php` to `config.php` in the deployed application directory. Fill in the database name, user, and password in `config.php`. Do not commit `config.php`.
 4. Upload the application files to the domain's `public_html` directory, or point the domain document root at the application directory.
 5. Enable the domain's SSL certificate before testing registration and sign-in.

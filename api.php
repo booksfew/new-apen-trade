@@ -221,9 +221,31 @@ try {
             if ($daily_loss > 100 || $drawdown > 100 || $exposure > 100) {
                 respond(['error' => 'Risk limits must not exceed 100%.'], 422);
             }
-            $statement = $db->prepare('INSERT INTO risk_settings (user_id, daily_loss_percent, max_drawdown_percent, exposure_percent) VALUES (:user_id, :daily_loss, :drawdown, :exposure) ON DUPLICATE KEY UPDATE daily_loss_percent=VALUES(daily_loss_percent), max_drawdown_percent=VALUES(max_drawdown_percent), exposure_percent=VALUES(exposure_percent)');
-            $statement->execute(['user_id' => $user_id, 'daily_loss' => $daily_loss, 'drawdown' => $drawdown, 'exposure' => $exposure]);
-            respond(['ok' => true]);
+            $today = gmdate('Y-m-d');
+            $db->beginTransaction();
+            $update = $db->prepare('UPDATE risk_settings SET daily_loss_percent=:daily_loss, max_drawdown_percent=:drawdown, exposure_percent=:exposure, last_changed_date=:today WHERE user_id=:user_id AND (last_changed_date IS NULL OR last_changed_date < :today)');
+            $update->execute(['daily_loss' => $daily_loss, 'drawdown' => $drawdown, 'exposure' => $exposure, 'today' => $today, 'user_id' => $user_id]);
+            if ($update->rowCount() === 0) {
+                $check = $db->prepare('SELECT last_changed_date FROM risk_settings WHERE user_id=:user_id');
+                $check->execute(['user_id' => $user_id]);
+                $last_changed = $check->fetchColumn();
+                if ($last_changed !== false) {
+                    $db->rollBack();
+                    respond(['error' => 'Risk settings can only be changed once per UTC day. Try again after 00:00 UTC tomorrow.', 'next_change_utc' => gmdate('Y-m-d\TH:i:s\Z', strtotime('tomorrow UTC'))], 429);
+                }
+                try {
+                    $insert = $db->prepare('INSERT INTO risk_settings (user_id, daily_loss_percent, max_drawdown_percent, exposure_percent, last_changed_date) VALUES (:user_id, :daily_loss, :drawdown, :exposure, :today)');
+                    $insert->execute(['user_id' => $user_id, 'daily_loss' => $daily_loss, 'drawdown' => $drawdown, 'exposure' => $exposure, 'today' => $today]);
+                } catch (PDOException $exception) {
+                    $db->rollBack();
+                    if ($exception->getCode() === '23000' || $exception->getCode() === '40001') {
+                        respond(['error' => 'Risk settings can only be changed once per UTC day. Try again after 00:00 UTC tomorrow.'], 429);
+                    }
+                    throw $exception;
+                }
+            }
+            $db->commit();
+            respond(['ok' => true, 'last_changed_date' => $today, 'next_change_utc' => gmdate('Y-m-d\TH:i:s\Z', strtotime('tomorrow UTC'))]);
         }
 
         respond(['error' => 'Unknown action.'], 404);
@@ -235,9 +257,9 @@ try {
         $accounts_query->execute(['user_id' => $user_id]);
         $trades_query = $db->prepare('SELECT t.id, t.account_id, a.name AS account, t.symbol, t.side, t.entry_price AS entry, t.exit_price AS exit, t.lots, t.pnl, t.traded_at AS date, t.notes FROM trades t JOIN trading_accounts a ON a.id=t.account_id WHERE t.user_id=:user_id ORDER BY t.traded_at DESC, t.id DESC LIMIT 500');
         $trades_query->execute(['user_id' => $user_id]);
-        $risk_query = $db->prepare('SELECT daily_loss_percent, max_drawdown_percent, exposure_percent FROM risk_settings WHERE user_id=:user_id');
+        $risk_query = $db->prepare('SELECT daily_loss_percent, max_drawdown_percent, exposure_percent, last_changed_date FROM risk_settings WHERE user_id=:user_id');
         $risk_query->execute(['user_id' => $user_id]);
-        $risk = $risk_query->fetch() ?: ['daily_loss_percent' => 2, 'max_drawdown_percent' => 12, 'exposure_percent' => 4.5];
+        $risk = $risk_query->fetch() ?: ['daily_loss_percent' => 2, 'max_drawdown_percent' => 12, 'exposure_percent' => 4.5, 'last_changed_date' => null];
         $trades = $trades_query->fetchAll();
         $stats_query = $db->prepare('SELECT COUNT(*) AS total_trades, COALESCE(SUM(pnl > 0), 0) AS wins, COALESCE(SUM(pnl), 0) AS total_pnl FROM trades WHERE user_id=:user_id');
         $stats_query->execute(['user_id' => $user_id]);
@@ -260,6 +282,9 @@ try {
 
     respond(['error' => 'Unknown action.'], 404);
 } catch (Throwable $exception) {
+    if (isset($db) && $db instanceof PDO && $db->inTransaction()) {
+        $db->rollBack();
+    }
     error_log($exception->__toString());
     respond(['error' => 'A server error occurred. Check the deployment configuration and server log.'], 500);
 }

@@ -45,6 +45,7 @@ CREATE TABLE risk_settings (
     daily_loss_percent DECIMAL(5,2) NOT NULL DEFAULT 2.00,
     max_drawdown_percent DECIMAL(5,2) NOT NULL DEFAULT 12.00,
     exposure_percent DECIMAL(5,2) NOT NULL DEFAULT 4.50,
+    last_changed_date DATE NULL,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id),
     CONSTRAINT risk_user_fk FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE

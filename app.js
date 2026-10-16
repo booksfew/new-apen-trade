@@ -3,7 +3,7 @@ const state = {
   csrfToken: '',
   accounts: [],
   trades: [],
-  risk: { daily_loss_percent: 2, max_drawdown_percent: 12, exposure_percent: 4.5 },
+  risk: { daily_loss_percent: 2, max_drawdown_percent: 12, exposure_percent: 4.5, last_changed_date: null },
   stats: { total_trades: 0, win_rate: 0, pnl: 0 },
   authMode: 'login',
   editingTradeId: null,
@@ -50,13 +50,13 @@ function previewRecord(email) {
     return JSON.parse(sessionStorage.getItem(key)) || {
       accounts: [],
       trades: [],
-      risk: { daily_loss_percent: 2, max_drawdown_percent: 12, exposure_percent: 4.5 },
+      risk: { daily_loss_percent: 2, max_drawdown_percent: 12, exposure_percent: 4.5, last_changed_date: null },
     };
   } catch {
     return {
       accounts: [],
       trades: [],
-      risk: { daily_loss_percent: 2, max_drawdown_percent: 12, exposure_percent: 4.5 },
+      risk: { daily_loss_percent: 2, max_drawdown_percent: 12, exposure_percent: 4.5, last_changed_date: null },
     };
   }
 }
@@ -152,9 +152,14 @@ async function previewApi(action, method, data) {
     return { ok: true };
   }
   if (action === 'risk-save') {
+    const today = new Date().toISOString().slice(0, 10);
+    if (record.risk.last_changed_date === today) {
+      throw new Error('Risk settings can only be changed once per UTC day. Try again after 00:00 UTC tomorrow.');
+    }
     record.risk = data;
+    record.risk.last_changed_date = today;
     savePreviewRecord(activeEmail, record);
-    return { ok: true };
+    return { ok: true, last_changed_date: today };
   }
   throw new Error('This action is not available in the local preview.');
 }
@@ -341,7 +346,17 @@ function renderDashboard() {
     });
   }
 
-  const riskText = `Saved limits: daily ${Number(state.risk.daily_loss_percent).toFixed(1)}%, drawdown ${Number(state.risk.max_drawdown_percent).toFixed(1)}%, exposure ${Number(state.risk.exposure_percent).toFixed(1)}%. Not enforced on broker trades.`;
+  const riskLocked = state.risk.last_changed_date === new Date().toISOString().slice(0, 10);
+  const saveRiskButton = document.getElementById('saveRiskSettings');
+  saveRiskButton.disabled = riskLocked;
+  saveRiskButton.textContent = riskLocked ? 'Saved today' : 'Save settings';
+  ['dailyLossLimit', 'drawdownLimit', 'exposureLimit'].forEach(id => {
+    document.getElementById(id).disabled = riskLocked;
+  });
+  const nextRiskChange = new Date();
+  nextRiskChange.setUTCHours(24, 0, 0, 0);
+  const lockNotice = riskLocked ? ` Next change after ${nextRiskChange.toISOString().slice(0, 16).replace('T', ' ')} UTC.` : '';
+  const riskText = `Saved limits: daily ${Number(state.risk.daily_loss_percent).toFixed(1)}%, drawdown ${Number(state.risk.max_drawdown_percent).toFixed(1)}%, exposure ${Number(state.risk.exposure_percent).toFixed(1)}%. Not enforced on broker trades.${lockNotice}`;
   document.getElementById('riskSummary').textContent = riskText;
   document.getElementById('riskDetail').textContent = riskText;
   document.getElementById('dailyLossLimit').value = state.risk.daily_loss_percent;
@@ -591,6 +606,10 @@ document.getElementById('submitTradeBtn').addEventListener('click', async () => 
 });
 
 document.getElementById('saveRiskSettings').addEventListener('click', async () => {
+  if (state.risk.last_changed_date === new Date().toISOString().slice(0, 10)) {
+    showToast('Risk settings can only be changed once per UTC day.');
+    return;
+  }
   const payload = {
     daily_loss_percent: Number(document.getElementById('dailyLossLimit').value),
     max_drawdown_percent: Number(document.getElementById('drawdownLimit').value),
@@ -649,7 +668,33 @@ document.getElementById('sellChoice').addEventListener('click', () => {
   document.getElementById('sellChoice').style.outline = '2px solid rgba(59,130,246,0.6)';
   document.getElementById('buyChoice').style.outline = 'none';
 });
-let gameAttempts = 5;
+let gameAttempts = 3;
+document.getElementById('attemptCount').textContent = String(gameAttempts);
+function renderSyntheticCandles() {
+  const chart = document.getElementById('syntheticCandles');
+  chart.replaceChildren();
+  let close = 50;
+  for (let index = 0; index < 60; index += 1) {
+    const open = close;
+    close = Math.min(94, Math.max(6, open + (Math.random() - 0.49) * 18));
+    const high = Math.min(98, Math.max(open, close) + Math.random() * 9);
+    const low = Math.max(2, Math.min(open, close) - Math.random() * 9);
+    const candle = document.createElement('div');
+    candle.className = `candle ${close >= open ? 'up' : 'down'}`;
+    candle.setAttribute('aria-hidden', 'true');
+    const wick = document.createElement('span');
+    wick.className = 'wick';
+    wick.style.top = `${100 - high}%`;
+    wick.style.height = `${high - low}%`;
+    const body = document.createElement('span');
+    body.className = 'body';
+    body.style.top = `${100 - Math.max(open, close)}%`;
+    body.style.height = `${Math.max(2, Math.abs(close - open))}%`;
+    candle.append(wick, body);
+    chart.appendChild(candle);
+  }
+}
+renderSyntheticCandles();
 document.getElementById('confirmPrediction').addEventListener('click', () => {
   const result = document.getElementById('predictionResult');
   if (!gameAttempts) {
