@@ -204,6 +204,10 @@ function showPage(name) {
     name = 'auth';
     showToast('Sign in to access your journal.');
   }
+  const isAuthenticated = Boolean(state.user);
+  document.getElementById('workspaceNav').hidden = !isAuthenticated;
+  document.getElementById('accountNav').hidden = !isAuthenticated;
+  document.getElementById('workspacePromo').hidden = !isAuthenticated;
   document.querySelectorAll('.page').forEach(section => {
     section.classList.toggle('active', section.dataset.pageName === name);
   });
