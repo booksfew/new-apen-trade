@@ -1,6 +1,8 @@
-# ApexTrade Journal
+# TraderSheild Journal
 
 Hostinger-compatible PHP/MySQL foundation for a manual trading journal. Broker connections, real payment processing, email verification, and external market predictions are not implemented.
+
+Opening `index.html` directly from disk enables a browser-session preview for signup and journal flows. Preview users and records are simulated, stay in the current browser session, and are not sent to the PHP API.
 
 ## Requirements
 

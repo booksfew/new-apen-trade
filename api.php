@@ -66,7 +66,7 @@ try {
         PDO::ATTR_EMULATE_PREPARES => false,
     ]);
 
-    session_name('apextrade_session');
+    session_name('tradersheild_session');
     session_set_cookie_params([
         'httponly' => true,
         'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
