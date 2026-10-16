@@ -11,8 +11,19 @@ const state = {
   frequency: 'monthly',
 };
 
+const LOCAL_PREVIEW = window.location.protocol === 'file:';
+const PREVIEW_USER_KEY = 'tradersheild-preview-user';
+const PREVIEW_USERS_KEY = 'tradersheild-preview-users';
+
 const toast = document.getElementById('toast');
 const authMessage = document.getElementById('authMessage');
+
+if (LOCAL_PREVIEW) {
+  const notice = document.createElement('div');
+  notice.className = 'status-banner';
+  notice.textContent = 'LOCAL PREVIEW ONLY — sign-in and journal data stay in this browser session; no real account is created.';
+  document.querySelector('.topbar').after(notice);
+}
 
 function showToast(message) {
   toast.textContent = message;
@@ -33,7 +44,123 @@ function clearAuthMessage() {
   authMessage.textContent = '';
 }
 
+function previewRecord(email) {
+  const key = `tradersheild-journal:${encodeURIComponent(email.toLowerCase())}`;
+  try {
+    return JSON.parse(sessionStorage.getItem(key)) || {
+      accounts: [],
+      trades: [],
+      risk: { daily_loss_percent: 2, max_drawdown_percent: 12, exposure_percent: 4.5 },
+    };
+  } catch {
+    return {
+      accounts: [],
+      trades: [],
+      risk: { daily_loss_percent: 2, max_drawdown_percent: 12, exposure_percent: 4.5 },
+    };
+  }
+}
+
+function savePreviewRecord(email, record) {
+  const key = `tradersheild-journal:${encodeURIComponent(email.toLowerCase())}`;
+  sessionStorage.setItem(key, JSON.stringify(record));
+}
+
+async function previewApi(action, method, data) {
+  if (action === 'csrf') return { csrf_token: 'local-preview-only' };
+  const activeEmail = sessionStorage.getItem(PREVIEW_USER_KEY);
+
+  if (action === 'register' || action === 'login') {
+    const email = String(data?.email || '').trim().toLowerCase();
+    const password = String(data?.password || '');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12) {
+      throw new Error('Enter a valid email and a password with at least 12 characters.');
+    }
+    let users = [];
+    try {
+      users = JSON.parse(sessionStorage.getItem(PREVIEW_USERS_KEY) || '[]');
+    } catch {
+      users = [];
+    }
+    if (action === 'register') {
+      if (users.includes(email)) throw new Error('This email already has a local preview account. Sign in instead.');
+      users.push(email);
+      sessionStorage.setItem(PREVIEW_USERS_KEY, JSON.stringify(users));
+    } else if (!users.includes(email)) {
+      throw new Error('No local preview account found. Choose Sign up first.');
+    }
+    sessionStorage.setItem(PREVIEW_USER_KEY, email);
+    return { user: { email }, csrf_token: 'local-preview-only' };
+  }
+
+  if (action === 'logout') {
+    sessionStorage.removeItem(PREVIEW_USER_KEY);
+    return { ok: true };
+  }
+  if (!activeEmail) throw new Error('Please sign in to continue.');
+
+  const record = previewRecord(activeEmail);
+  if (action === 'me') return { user: { email: activeEmail }, csrf_token: 'local-preview-only' };
+  if (action === 'state') {
+    const wins = record.trades.filter(trade => Number(trade.pnl) > 0).length;
+    const totalPnl = record.trades.reduce((sum, trade) => sum + Number(trade.pnl), 0);
+    return {
+      user: { email: activeEmail },
+      accounts: record.accounts,
+      trades: [...record.trades].sort((left, right) => right.date.localeCompare(left.date)),
+      risk: record.risk,
+      stats: {
+        total_trades: record.trades.length,
+        win_rate: record.trades.length ? Math.round(wins / record.trades.length * 1000) / 10 : 0,
+        pnl: Math.round(totalPnl * 100) / 100,
+      },
+      csrf_token: 'local-preview-only',
+    };
+  }
+  if (action === 'account-create') {
+    const account = { ...data, id: Date.now(), status: 'Manual — Not Connected' };
+    record.accounts.push(account);
+    savePreviewRecord(activeEmail, record);
+    return { id: account.id };
+  }
+  if (action === 'account-delete') {
+    record.accounts = record.accounts.filter(account => Number(account.id) !== Number(data.id));
+    record.trades = record.trades.filter(trade => Number(trade.account_id) !== Number(data.id));
+    savePreviewRecord(activeEmail, record);
+    return { ok: true };
+  }
+  if (action === 'trade-create' || action === 'trade-update') {
+    const trade = {
+      ...data,
+      id: action === 'trade-update' ? Number(data.id) : Date.now(),
+      account: record.accounts.find(account => Number(account.id) === Number(data.account_id))?.name || 'Manual account',
+      entry: String(data.entry),
+      exit: String(data.exit),
+      date: data.traded_at,
+    };
+    if (action === 'trade-update') {
+      record.trades = record.trades.map(item => Number(item.id) === trade.id ? trade : item);
+    } else {
+      record.trades.push(trade);
+    }
+    savePreviewRecord(activeEmail, record);
+    return { id: trade.id };
+  }
+  if (action === 'trade-delete') {
+    record.trades = record.trades.filter(trade => Number(trade.id) !== Number(data.id));
+    savePreviewRecord(activeEmail, record);
+    return { ok: true };
+  }
+  if (action === 'risk-save') {
+    record.risk = data;
+    savePreviewRecord(activeEmail, record);
+    return { ok: true };
+  }
+  throw new Error('This action is not available in the local preview.');
+}
+
 async function api(action, method = 'GET', data = null) {
+  if (LOCAL_PREVIEW) return previewApi(action, method, data);
   if (method !== 'GET' && !state.csrfToken) {
     const tokenResponse = await fetch('api.php?action=csrf', { credentials: 'same-origin' });
     const tokenData = await responseData(tokenResponse);
@@ -62,7 +189,7 @@ async function responseData(response) {
   try {
     return await response.json();
   } catch {
-    throw new Error('PHP API is unavailable. Deploy on PHP hosting and configure MySQL using README.md.');
+    throw new Error('The PHP API did not return JSON. Check PHP hosting and MySQL setup in README.md.');
   }
 }
 
@@ -315,7 +442,8 @@ document.getElementById('authForm').addEventListener('submit', async event => {
     await loadState();
     showPage('dashboard');
     document.getElementById('authForm').reset();
-    showToast(state.authMode === 'register' ? 'Account created.' : 'Signed in.');
+    const message = state.authMode === 'register' ? 'Account created.' : 'Signed in.';
+    showToast(LOCAL_PREVIEW ? `${message} Local preview only; credentials are not verified.` : message);
   } catch (error) {
     showAuthMessage(error.message);
   } finally {
@@ -534,6 +662,8 @@ document.getElementById('confirmPrediction').addEventListener('click', () => {
 });
 
 async function initialize() {
+  const submit = document.getElementById('authSubmit');
+  submit.disabled = true;
   try {
     const csrfResult = await api('csrf');
     state.csrfToken = csrfResult.csrf_token;
@@ -547,6 +677,8 @@ async function initialize() {
     } else {
       showAuthMessage(error.message);
     }
+  } finally {
+    submit.disabled = false;
   }
 }
 
