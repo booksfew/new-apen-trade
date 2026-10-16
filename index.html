@@ -52,8 +52,11 @@
       .mini-btn { border: 0; background: var(--primary); color: white; border-radius: 10px; padding: 9px 12px; cursor:pointer; font-weight:600; }
       .main-panel { flex:1; padding:18px 22px 28px; }
       .topbar { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:20px; }
-      .search-wrap { background: rgba(15,22,30,0.9); border: 1px solid var(--line); border-radius:12px; display:flex; align-items:center; gap:10px; padding:10px 12px; width:min(420px, 60vw); }
+      .search-wrap { background: rgba(15,22,30,0.9); border: 1px solid var(--line); border-radius:12px; display:flex; align-items:center; gap:10px; padding:10px 12px; width:min(420px, 60vw); position:relative; }
       .search-wrap input { background: transparent; border:none; color: var(--text); width:100%; outline:none; }
+      .search-results { position:absolute; top:calc(100% + 8px); left:0; right:0; z-index:20; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:6px; box-shadow:var(--shadow); }
+      .search-result { width:100%; text-align:left; border:0; border-radius:7px; background:transparent; color:var(--subtle); padding:9px 10px; cursor:pointer; }
+      .search-result:hover, .search-result:focus { background:var(--primary-soft); color:var(--text); }
       .top-actions { display:flex; align-items:center; gap:10px; }
       .ghost-btn, .primary-btn, .danger-btn, .success-btn, .secondary-btn { border-radius:10px; border:1px solid transparent; padding:10px 14px; cursor:pointer; font-weight:600; transition:0.2s ease; }
       .ghost-btn { background: transparent; border-color: var(--line); color: var(--text); }
@@ -123,7 +126,8 @@
       .pricing-toggle button.active { background: rgba(59,130,246,0.16); color: var(--text); }
       .pricing-grid { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
       .plan { position:relative; background: linear-gradient(180deg, rgba(17,26,36,0.98), rgba(12,18,25,0.98)); border:1px solid var(--line); border-radius:18px; padding:22px 18px; }
-      .plan.popular { border-color: rgba(96,165,250,0.6); }
+      .plan.popular { border:2px solid rgba(96,165,250,0.9); box-shadow:0 0 0 2px rgba(59,130,246,0.12), 0 18px 32px rgba(0,0,0,0.35); background:linear-gradient(180deg, rgba(26,44,65,0.98), rgba(12,18,25,0.98)); }
+      .plan.popular h3, .plan.popular .price { color:#fff; font-weight:900; }
       .plan.elite { border-color: rgba(167,139,250,0.42); }
       .recommended, .strict-mode { position:absolute; top:14px; right:14px; }
       .plan h3 { margin:0 0 6px; }
@@ -162,7 +166,7 @@
       .candles { display:grid; grid-template-columns: repeat(60, minmax(0, 1fr)); gap:2px; height:220px; align-items:stretch; padding:14px 8px 0; }
       .candle { position:relative; width:100%; border-radius:2px; background:transparent; border:0; height:100%; }
       .candle .wick { position:absolute; left:50%; width:1px; background: rgba(148,163,184,0.75); transform:translateX(-50%); }
-      .candle .body { position:absolute; left:1px; right:1px; bottom:auto; min-height:3px; border-radius:2px; transform:none; }
+      .candle .body { position:absolute; left:1px; right:1px; bottom:auto; min-height:3px; border-radius:2px; transform:none; transition:top .35s ease, height .35s ease; }
       .candle.up .body { background: var(--green); }
       .candle.down .body { background: var(--red); }
       .prediction-controls { display:grid; gap:12px; }
@@ -245,12 +249,12 @@
         <header class="topbar">
           <div class="search-wrap">
             <span>⌕</span>
-            <input type="text" placeholder="Search across dashboard" />
+            <input id="globalSearch" type="search" placeholder="Search pages and your journal" autocomplete="off" />
+            <div id="searchResults" class="search-results" role="listbox" hidden></div>
           </div>
           <div class="top-actions">
             <button class="ghost-btn" data-page="notifications">Notifications</button>
             <button class="primary-btn" id="authAction" data-page="auth">Log in</button>
-            <button class="ghost-btn" id="logoutBtn" type="button" hidden>Log out</button>
           </div>
         </header>
 
@@ -347,12 +351,8 @@
         </section>
 
         <section class="page" data-page-name="analytics">
-          <div class="page-header"><div><h1>Analytics</h1><p>Deep performance segmentation by symbol, session, and strategy group.</p></div></div>
-          <div class="card-grid three">
-            <div class="panel"><h3>Strategy mix</h3><div class="chart-bars" style="height:150px;"><span style="height: 52%;"></span><span style="height: 36%;"></span><span style="height: 80%;"></span><span style="height: 64%;"></span><span style="height: 90%;"></span><span style="height: 74%;"></span></div></div>
-            <div class="panel"><h3>Best pair</h3><div class="metric"><div class="label">EURUSD</div><div class="value">+12.3%<span class="delta up">+24 wins</span></div></div></div>
-            <div class="panel"><h3>High risk</h3><div class="metric"><div class="label">BTCUSD</div><div class="value">-4.8%<span class="delta down">+8 losses</span></div></div></div>
-          </div>
+          <div class="page-header"><div><h1>Analytics</h1><p>Profit and loss from your saved journal trades.</p></div><div class="field"><label for="analyticsRange">Date range</label><select id="analyticsRange"><option value="1">1 day</option><option value="3">3 days</option><option value="7">7 days</option><option value="15">15 days</option><option value="30">1 month</option><option value="90">3 months</option><option value="180">6 months</option><option value="365">1 year</option></select></div></div>
+          <div class="panel"><div class="headline-row"><div><div class="muted" id="analyticsRangeLabel">Last 1 day</div><div class="value" id="analyticsPnl">$0.00</div></div><span class="badge blue">Journal P/L</span></div><div class="sparkline" style="height:240px"><svg id="analyticsChart" viewBox="0 0 720 220" preserveAspectRatio="none" aria-label="Profit and loss chart from saved journal trades"></svg></div><p class="muted" id="analyticsEmpty">Add dated trades to see your P/L for this period.</p></div>
         </section>
 
         <section class="page" data-page-name="risk">
@@ -379,7 +379,7 @@
             <div class="plan popular"><span class="badge blue recommended">Recommended</span><h3>Premium</h3><div class="price-row"><span class="price" data-price-premium="29">$29</span><span class="frequency">/mo</span></div><p class="muted">For serious journaling, risk alerts, and deeper insight.</p><ul><li><span class="mark y">✓</span> 5 daily Prediction Game attempts</li><li><span class="mark y">✓</span> Unlimited journal entries</li><li><span class="mark y">✓</span> Advanced analytics</li><li><span class="mark y">✓</span> Risk guard support</li><li><span class="mark y">✓</span> Premium support</li></ul><button class="primary-btn" data-demo-checkout="Premium">Choose Premium demo</button></div>
             <div class="plan elite"><span class="badge purple strict-mode">Strict Mode</span><h3>Elite</h3><div class="price-row"><span class="price" data-price-elite="59">$59</span><span class="frequency">/mo</span></div><p class="muted">For strict risk ops and multi-account monitoring.</p><ul><li><span class="mark y">✓</span> 10 daily Prediction Game attempts</li><li><span class="mark y">✓</span> Multi-account dashboards</li><li><span class="mark y">✓</span> Advanced analytics</li><li><span class="mark y">✓</span> Strict mode controls</li><li><span class="mark y">✓</span> Priority onboarding</li></ul><button class="secondary-btn" data-demo-checkout="Elite">Choose Elite demo</button></div>
           </div>
-          <div class="panel" style="margin-top:22px;"><h3>Feature comparison</h3><div class="table-wrap"><table class="comparison-table"><thead><tr><th>Feature</th><th>Free</th><th>Premium</th><th>Elite</th></tr></thead><tbody><tr><td>Prediction Game attempts</td><td>3/day</td><td>5/day</td><td>10/day</td></tr><tr><td>Risk guard</td><td>✕</td><td>✓</td><td>✓ Strict</td></tr><tr><td>Advanced analytics</td><td>✕</td><td>✓</td><td>✓</td></tr><tr><td>Broker integration</td><td>Demo only</td><td>Demo only</td><td>Demo only</td></tr><tr><td>Priority support</td><td>✕</td><td>✓</td><td>✓</td></tr></tbody></table></div></div>
+          <div class="panel" style="margin-top:22px;"><h3>Feature comparison</h3><div class="table-wrap"><table class="comparison-table"><thead><tr><th>Feature</th><th>Free</th><th>Premium</th><th>Elite</th></tr></thead><tbody><tr><td>Prediction Game attempts</td><td>3/day</td><td>5/day</td><td>10/day</td></tr><tr><td>Risk guard</td><td>✕</td><td>✓</td><td>✓ Strict</td></tr><tr><td>Advanced analytics</td><td>✕</td><td>✓</td><td>✓</td></tr><tr><td>Broker integration</td><td>Demo only</td><td>Live (setup required)</td><td>Live (setup required)</td></tr><tr><td>Priority support</td><td>✕</td><td>✓</td><td>✓</td></tr></tbody></table></div><p class="muted">Paid-plan broker integrations are not configured or connected yet.</p></div>
         </section>
 
         <section class="page" data-page-name="billing">
@@ -391,10 +391,10 @@
         </section>
 
         <section class="page" data-page-name="settings">
-          <div class="page-header"><div><h1>Settings</h1><p>Control account preferences, timezone, and local demo preferences.</p></div></div>
+          <div class="page-header"><div><h1>Settings</h1><p>Update your profile and account details.</p></div></div>
           <div class="card-grid two">
-            <div class="panel"><h3>Profile</h3><div class="field-grid"><div class="field"><label>Display name</label><input value="Alex Morgan" /></div><div class="field"><label>Timezone</label><select><option>UTC</option><option>New York</option><option>London</option></select></div><div class="field"><label>Base currency</label><select><option>USD</option><option>EUR</option><option>GBP</option></select></div></div></div>
-            <div class="panel"><h3>Preferences</h3><div class="setting-item">Email notifications: Enabled</div><div class="setting-item">Focus mode: Enabled</div><div class="setting-item">Market session alerts: On</div></div>
+            <div class="panel"><h3>Profile</h3><form id="profileForm" class="field-grid"><div class="field"><label for="profileDisplayName">Display name</label><input id="profileDisplayName" type="text" maxlength="80" required /></div><div class="field"><label for="profileEmail">Email</label><input id="profileEmail" type="email" readonly /></div><div class="field"><label for="profileTimezone">Timezone</label><select id="profileTimezone"><option value="UTC">UTC</option><option value="Asia/Dhaka">Dhaka (UTC+6)</option><option value="America/New_York">New York</option><option value="Europe/London">London</option></select></div><div class="field"><label for="profileCurrency">Base currency</label><select id="profileCurrency"><option>USD</option><option>EUR</option><option>GBP</option><option>BDT</option></select></div><div id="profileMessage" class="status-banner" role="status" hidden></div><button class="primary-btn" id="saveProfileBtn" type="submit">Save profile</button></form></div>
+            <div class="panel"><h3>Account</h3><div class="support-item">Trading accounts are manual journal entries. No broker is connected.</div><button class="danger-btn" id="logoutBtn" type="button" hidden>Log out</button></div>
           </div>
         </section>
 

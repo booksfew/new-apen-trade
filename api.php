@@ -103,9 +103,11 @@ try {
                 if ($display_name_length === false || $display_name_length < 2 || $display_name_length > 80) {
                     respond(['error' => 'Display name must be between 2 and 80 characters.'], 422);
                 }
-                $statement = $db->prepare('INSERT INTO users (display_name, email, password_hash) VALUES (:display_name, :email, :password_hash)');
+                $timezone = 'UTC';
+                $base_currency = 'USD';
+                $statement = $db->prepare('INSERT INTO users (display_name, email, timezone, base_currency, password_hash) VALUES (:display_name, :email, :timezone, :base_currency, :password_hash)');
                 try {
-                    $statement->execute(['display_name' => $display_name, 'email' => $email, 'password_hash' => password_hash($password, PASSWORD_DEFAULT)]);
+                    $statement->execute(['display_name' => $display_name, 'email' => $email, 'timezone' => $timezone, 'base_currency' => $base_currency, 'password_hash' => password_hash($password, PASSWORD_DEFAULT)]);
                 } catch (PDOException $exception) {
                     if ($exception->getCode() === '23000') {
                         respond(['error' => 'An account with that email already exists.'], 409);
@@ -114,7 +116,7 @@ try {
                 }
                 $user_id = (int) $db->lastInsertId();
             } else {
-                $statement = $db->prepare('SELECT id, display_name, password_hash FROM users WHERE email = :email LIMIT 1');
+                $statement = $db->prepare('SELECT id, display_name, timezone, base_currency, password_hash FROM users WHERE email = :email LIMIT 1');
                 $statement->execute(['email' => $email]);
                 $user = $statement->fetch();
                 if (!$user || !password_verify($password, $user['password_hash'])) {
@@ -122,14 +124,18 @@ try {
                 }
                 $user_id = (int) $user['id'];
                 $display_name = $user['display_name'];
+                $timezone = $user['timezone'];
+                $base_currency = $user['base_currency'];
             }
 
             session_regenerate_id(true);
             $_SESSION['user_id'] = $user_id;
             $_SESSION['email'] = $email;
             $_SESSION['display_name'] = $display_name;
+            $_SESSION['timezone'] = $timezone;
+            $_SESSION['base_currency'] = $base_currency;
             $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-            respond(['user' => ['email' => $email, 'display_name' => $display_name], 'csrf_token' => $_SESSION['csrf_token']]);
+            respond(['user' => ['email' => $email, 'display_name' => $display_name, 'timezone' => $timezone, 'base_currency' => $base_currency], 'csrf_token' => $_SESSION['csrf_token']]);
         }
 
         if ($action === 'logout') {
@@ -140,6 +146,28 @@ try {
         }
 
         $user_id = require_user();
+
+        if ($action === 'profile-save') {
+            $display_name = trim((string) ($input['display_name'] ?? ''));
+            $display_name_length = preg_match_all('/./us', $display_name, $display_name_characters);
+            $timezone = trim((string) ($input['timezone'] ?? 'UTC'));
+            $base_currency = strtoupper(trim((string) ($input['base_currency'] ?? 'USD')));
+            if ($display_name_length === false || $display_name_length < 2 || $display_name_length > 80) {
+                respond(['error' => 'Display name must be between 2 and 80 characters.'], 422);
+            }
+            if (!in_array($timezone, ['UTC', 'Asia/Dhaka', 'America/New_York', 'Europe/London'], true)) {
+                respond(['error' => 'Choose a supported timezone.'], 422);
+            }
+            if (!in_array($base_currency, ['USD', 'EUR', 'GBP', 'BDT'], true)) {
+                respond(['error' => 'Choose a supported base currency.'], 422);
+            }
+            $statement = $db->prepare('UPDATE users SET display_name=:display_name, timezone=:timezone, base_currency=:base_currency WHERE id=:user_id');
+            $statement->execute(['display_name' => $display_name, 'timezone' => $timezone, 'base_currency' => $base_currency, 'user_id' => $user_id]);
+            $_SESSION['display_name'] = $display_name;
+            $_SESSION['timezone'] = $timezone;
+            $_SESSION['base_currency'] = $base_currency;
+            respond(['user' => ['email' => $_SESSION['email'] ?? '', 'display_name' => $display_name, 'timezone' => $timezone, 'base_currency' => $base_currency]]);
+        }
 
         if ($action === 'account-create') {
             $name = trim((string) ($input['name'] ?? ''));
@@ -273,7 +301,7 @@ try {
         $aggregate = $stats_query->fetch();
         $total_trades = (int) $aggregate['total_trades'];
         respond([
-            'user' => ['email' => $_SESSION['email'] ?? '', 'display_name' => $_SESSION['display_name'] ?? ''],
+            'user' => ['email' => $_SESSION['email'] ?? '', 'display_name' => $_SESSION['display_name'] ?? '', 'timezone' => $_SESSION['timezone'] ?? 'UTC', 'base_currency' => $_SESSION['base_currency'] ?? 'USD'],
             'accounts' => $accounts_query->fetchAll(),
             'trades' => $trades,
             'risk' => $risk,
@@ -284,7 +312,7 @@ try {
 
     if ($method === 'GET' && $action === 'me') {
         require_user();
-        respond(['user' => ['email' => $_SESSION['email'] ?? '', 'display_name' => $_SESSION['display_name'] ?? ''], 'csrf_token' => $_SESSION['csrf_token']]);
+        respond(['user' => ['email' => $_SESSION['email'] ?? '', 'display_name' => $_SESSION['display_name'] ?? '', 'timezone' => $_SESSION['timezone'] ?? 'UTC', 'base_currency' => $_SESSION['base_currency'] ?? 'USD'], 'csrf_token' => $_SESSION['csrf_token']]);
     }
 
     respond(['error' => 'Unknown action.'], 404);

@@ -47,18 +47,17 @@ function clearAuthMessage() {
 
 function previewRecord(email) {
   const key = `tradersheild-journal:${encodeURIComponent(email.toLowerCase())}`;
+  const defaults = {
+    accounts: [],
+    trades: [],
+    risk: { daily_loss_percent: 2, max_drawdown_percent: 12, exposure_percent: 4.5, last_changed_date: null },
+    profile: { timezone: 'UTC', base_currency: 'USD' },
+  };
   try {
-    return JSON.parse(sessionStorage.getItem(key)) || {
-      accounts: [],
-      trades: [],
-      risk: { daily_loss_percent: 2, max_drawdown_percent: 12, exposure_percent: 4.5, last_changed_date: null },
-    };
+    const saved = JSON.parse(sessionStorage.getItem(key)) || {};
+    return { ...defaults, ...saved, profile: { ...defaults.profile, ...saved.profile } };
   } catch {
-    return {
-      accounts: [],
-      trades: [],
-      risk: { daily_loss_percent: 2, max_drawdown_percent: 12, exposure_percent: 4.5, last_changed_date: null },
-    };
+    return defaults;
   }
 }
 
@@ -80,7 +79,9 @@ async function previewApi(action, method, data) {
     let users = [];
     try {
       users = JSON.parse(sessionStorage.getItem(PREVIEW_USERS_KEY) || '[]')
-        .map(user => typeof user === 'string' ? { email: user, display_name: user.split('@')[0] } : user);
+        .map(user => typeof user === 'string'
+          ? { email: user, display_name: user.split('@')[0], timezone: 'UTC', base_currency: 'USD' }
+          : { timezone: 'UTC', base_currency: 'USD', ...user });
     } catch {
       users = [];
     }
@@ -90,12 +91,13 @@ async function previewApi(action, method, data) {
         throw new Error('Display name must be between 2 and 80 characters.');
       }
       if (users.some(user => user.email === email)) throw new Error('This email already has a local preview account. Sign in instead.');
-      users.push({ email, display_name: displayName });
+      users.push({ email, display_name: displayName, timezone: 'UTC', base_currency: 'USD' });
       sessionStorage.setItem(PREVIEW_USERS_KEY, JSON.stringify(users));
     } else {
       const user = users.find(item => item.email === email);
       if (!user) throw new Error('No local preview account found. Choose Sign up first.');
       displayName = user.display_name;
+      data.profile = user;
     }
     sessionStorage.setItem(PREVIEW_USER_KEY, email);
     sessionStorage.setItem(PREVIEW_DISPLAY_NAME_KEY, displayName);
@@ -110,12 +112,30 @@ async function previewApi(action, method, data) {
   if (!activeEmail) throw new Error('Please sign in to continue.');
 
   const record = previewRecord(activeEmail);
-  if (action === 'me') return { user: { email: activeEmail, display_name: sessionStorage.getItem(PREVIEW_DISPLAY_NAME_KEY) || '' }, csrf_token: 'local-preview-only' };
+  if (action === 'profile-save') {
+    const display_name = String(data?.display_name || '').trim();
+    const timezone = String(data?.timezone || 'UTC');
+    const base_currency = String(data?.base_currency || 'USD');
+    if (display_name.length < 2 || display_name.length > 80) throw new Error('Display name must be between 2 and 80 characters.');
+    if (!['UTC', 'Asia/Dhaka', 'America/New_York', 'Europe/London'].includes(timezone)) throw new Error('Choose a supported timezone.');
+    if (!['USD', 'EUR', 'GBP', 'BDT'].includes(base_currency)) throw new Error('Choose a supported base currency.');
+    const users = JSON.parse(sessionStorage.getItem(PREVIEW_USERS_KEY) || '[]');
+    const user = users.find(item => typeof item !== 'string' && item.email === activeEmail);
+    if (user) Object.assign(user, { display_name, timezone, base_currency });
+    sessionStorage.setItem(PREVIEW_USERS_KEY, JSON.stringify(users));
+    sessionStorage.setItem(PREVIEW_DISPLAY_NAME_KEY, display_name);
+    record.profile = { display_name, timezone, base_currency };
+    savePreviewRecord(activeEmail, record);
+    return { user: { email: activeEmail, display_name, timezone, base_currency } };
+  }
+  if (action === 'me') return { user: { email: activeEmail, display_name: sessionStorage.getItem(PREVIEW_DISPLAY_NAME_KEY) || '', ...record.profile }, csrf_token: 'local-preview-only' };
   if (action === 'state') {
+    const users = JSON.parse(sessionStorage.getItem(PREVIEW_USERS_KEY) || '[]');
+    const user = users.find(item => typeof item !== 'string' && item.email === activeEmail);
     const wins = record.trades.filter(trade => Number(trade.pnl) > 0).length;
     const totalPnl = record.trades.reduce((sum, trade) => sum + Number(trade.pnl), 0);
     return {
-      user: { email: activeEmail, display_name: sessionStorage.getItem(PREVIEW_DISPLAY_NAME_KEY) || '' },
+      user: { email: activeEmail, display_name: user?.display_name || sessionStorage.getItem(PREVIEW_DISPLAY_NAME_KEY) || '', timezone: user?.timezone || record.profile.timezone, base_currency: user?.base_currency || record.profile.base_currency },
       accounts: record.accounts,
       trades: [...record.trades].sort((left, right) => right.date.localeCompare(left.date)),
       risk: record.risk,
@@ -328,6 +348,42 @@ function renderHistory() {
   }).join('');
 }
 
+function renderAnalytics() {
+  const range = Number(document.getElementById('analyticsRange').value || 1);
+  const today = new Date().toISOString().slice(0, 10);
+  const startDate = new Date(`${today}T00:00:00Z`);
+  startDate.setUTCDate(startDate.getUTCDate() - range + 1);
+  const start = startDate.toISOString().slice(0, 10);
+  const trades = state.trades.filter(trade => trade.date >= start && trade.date <= today);
+  const total = trades.reduce((sum, trade) => sum + Number(trade.pnl), 0);
+  const rangeLabel = { 1: '1 day', 3: '3 days', 7: '7 days', 15: '15 days', 30: '1 month', 90: '3 months', 180: '6 months', 365: '1 year' }[range] || `${range} days`;
+  const pnl = document.getElementById('analyticsPnl');
+  pnl.textContent = formatMoney(total);
+  pnl.className = `value money ${total < 0 ? 'down' : 'up'}`;
+  document.getElementById('analyticsRangeLabel').textContent = `Last ${rangeLabel}`;
+  document.getElementById('analyticsEmpty').hidden = trades.length > 0;
+  document.getElementById('analyticsEmpty').textContent = trades.length ? '' : 'No journal trades in this period.';
+
+  const daily = new Map();
+  trades.forEach(trade => daily.set(trade.date, (daily.get(trade.date) || 0) + Number(trade.pnl)));
+  const values = [...daily.entries()].sort(([left], [right]) => left.localeCompare(right));
+  const chart = document.getElementById('analyticsChart');
+  chart.replaceChildren();
+  if (!values.length) return;
+  let cumulative = 0;
+  const series = values.map(([, value]) => cumulative += value);
+  const low = Math.min(0, ...series);
+  const high = Math.max(0, ...series);
+  const span = high - low || 1;
+  const points = series.map((value, index) => `${values.length === 1 ? 360 : 24 + index / (values.length - 1) * 672},${190 - (value - low) / span * 160}`);
+  const color = total < 0 ? '#f87171' : '#20c997';
+  if (points.length === 1) {
+    chart.innerHTML = `<circle cx="360" cy="${points[0].split(',')[1]}" r="7" fill="${color}"/>`;
+  } else {
+    chart.innerHTML = `<polyline points="${points.join(' ')}" fill="none" stroke="${color}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>`;
+  }
+}
+
 function renderDashboard() {
   const trades = selectedTrades();
   const wins = trades.filter(trade => Number(trade.pnl) > 0).length;
@@ -413,6 +469,11 @@ async function loadState() {
   renderAccounts();
   renderHistory();
   renderDashboard();
+  renderAnalytics();
+  document.getElementById('profileDisplayName').value = state.user.display_name || '';
+  document.getElementById('profileEmail').value = state.user.email || '';
+  document.getElementById('profileTimezone').value = state.user.timezone || 'UTC';
+  document.getElementById('profileCurrency').value = state.user.base_currency || 'USD';
   const authAction = document.getElementById('authAction');
   authAction.textContent = state.user.display_name || state.user.email;
   authAction.dataset.page = 'settings';
@@ -442,6 +503,70 @@ document.querySelectorAll('.nav-item, [data-page]').forEach(button => {
     showPage(button.dataset.page);
   });
 });
+
+const searchInput = document.getElementById('globalSearch');
+const searchResults = document.getElementById('searchResults');
+const searchablePages = [
+  ['Account Overview', 'dashboard'], ['Trading Accounts', 'accounts'], ['Trading History', 'history'],
+  ['Trading Calendar', 'calendar'], ['Analytics', 'analytics'], ['Risk Guard', 'risk'],
+  ['Prediction Game', 'prediction'], ['Pricing', 'pricing'], ['Subscription & Billing', 'billing'],
+  ['Settings', 'settings'], ['Notifications', 'notifications'], ['Support', 'support'],
+  ['Terms of Service', 'terms'], ['Privacy Policy', 'privacy'], ['Refund Policy', 'refund'],
+  ['Trading Risk Disclaimer', 'disclaimer'], ['Cookie Policy', 'cookies'],
+];
+
+function renderSearchResults() {
+  const query = searchInput.value.trim().toLowerCase();
+  searchResults.replaceChildren();
+  if (!query) {
+    searchResults.hidden = true;
+    return;
+  }
+  const results = searchablePages
+    .filter(([label, page]) => label.toLowerCase().includes(query) && (state.user || ['pricing', 'terms', 'privacy', 'refund', 'disclaimer', 'cookies'].includes(page)))
+    .slice(0, 5)
+    .map(([label, page]) => ({ label, detail: 'Page', page }));
+  if (state.user) {
+    state.accounts.filter(account => account.name.toLowerCase().includes(query)).slice(0, 3)
+      .forEach(account => results.push({ label: account.name, detail: 'Trading account', page: 'accounts' }));
+    state.trades.filter(trade => `${trade.symbol} ${trade.account} ${trade.notes || ''}`.toLowerCase().includes(query)).slice(0, 5)
+      .forEach(trade => results.push({ label: `${trade.symbol} · ${trade.account}`, detail: 'Journal trade', page: 'history', query: trade.symbol }));
+  }
+  if (!results.length) results.push({ label: 'No matching pages or journal entries', detail: '', page: '' });
+  results.forEach(result => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'search-result';
+    button.setAttribute('role', 'option');
+    button.textContent = result.detail ? `${result.label} · ${result.detail}` : result.label;
+    button.disabled = !result.page;
+    button.addEventListener('click', () => {
+      if (!result.page) return;
+      showPage(result.page);
+      if (result.query) {
+        document.getElementById('historySearch').value = result.query;
+        renderHistory();
+      }
+      searchResults.hidden = true;
+      searchInput.value = '';
+    });
+    searchResults.appendChild(button);
+  });
+  searchResults.hidden = false;
+}
+
+searchInput.addEventListener('input', renderSearchResults);
+searchInput.addEventListener('keydown', event => {
+  if (event.key === 'Escape') searchResults.hidden = true;
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    searchResults.querySelector('.search-result:not(:disabled)')?.click();
+  }
+});
+document.addEventListener('click', event => {
+  if (!event.target.closest('.search-wrap')) searchResults.hidden = true;
+});
+document.getElementById('analyticsRange').addEventListener('change', renderAnalytics);
 
 document.querySelectorAll('[data-close-modal]').forEach(button => {
   button.addEventListener('click', () => closeModal(button.dataset.closeModal));
@@ -502,6 +627,39 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
     showToast('Signed out.');
   } catch (error) {
     showToast(error.message);
+  }
+});
+
+document.getElementById('profileForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const message = document.getElementById('profileMessage');
+  const submit = document.getElementById('saveProfileBtn');
+  const display_name = document.getElementById('profileDisplayName').value.trim();
+  if (display_name.length < 2 || display_name.length > 80) {
+    message.hidden = false;
+    message.textContent = 'Display name must be between 2 and 80 characters.';
+    return;
+  }
+  submit.disabled = true;
+  message.hidden = true;
+  try {
+    await api('profile-save', 'POST', {
+      display_name,
+      timezone: document.getElementById('profileTimezone').value,
+      base_currency: document.getElementById('profileCurrency').value,
+    });
+    await loadState();
+    message.hidden = false;
+    message.textContent = 'Profile saved.';
+    message.style.borderColor = 'rgba(32,201,151,0.3)';
+    message.style.background = 'rgba(32,201,151,0.1)';
+  } catch (error) {
+    message.hidden = false;
+    message.textContent = error.message;
+    message.style.borderColor = 'rgba(248,113,113,0.3)';
+    message.style.background = 'rgba(248,113,113,0.1)';
+  } finally {
+    submit.disabled = false;
   }
 });
 
@@ -683,50 +841,68 @@ document.querySelectorAll('.page[data-page-name="home"], .page[data-page-name="a
   section.prepend(notice);
 });
 
-document.getElementById('buyChoice').addEventListener('click', () => {
-  document.getElementById('buyChoice').style.outline = '2px solid rgba(59,130,246,0.6)';
-  document.getElementById('sellChoice').style.outline = 'none';
-});
-document.getElementById('sellChoice').addEventListener('click', () => {
-  document.getElementById('sellChoice').style.outline = '2px solid rgba(59,130,246,0.6)';
-  document.getElementById('buyChoice').style.outline = 'none';
-});
+let selectedDirection = null;
+function chooseDirection(direction) {
+  selectedDirection = direction;
+  document.getElementById('buyChoice').style.outline = direction === 'Buy' ? '2px solid rgba(59,130,246,0.8)' : 'none';
+  document.getElementById('sellChoice').style.outline = direction === 'Sell' ? '2px solid rgba(59,130,246,0.8)' : 'none';
+  document.getElementById('buyChoice').setAttribute('aria-pressed', String(direction === 'Buy'));
+  document.getElementById('sellChoice').setAttribute('aria-pressed', String(direction === 'Sell'));
+}
+document.getElementById('buyChoice').addEventListener('click', () => chooseDirection('Buy'));
+document.getElementById('sellChoice').addEventListener('click', () => chooseDirection('Sell'));
 let gameAttempts = 3;
 document.getElementById('attemptCount').textContent = String(gameAttempts);
+let syntheticClose = 50;
+function createSyntheticCandle(direction = null) {
+  const open = syntheticClose;
+  const sign = direction === null ? (Math.random() > 0.5 ? 1 : -1) : direction ? 1 : -1;
+  const movement = direction === null ? (Math.random() - 0.5) * 14 : sign * (4 + Math.random() * 8) + (Math.random() - 0.5) * 3;
+  const close = Math.min(94, Math.max(6, open + movement));
+  const high = Math.min(98, Math.max(open, close) + Math.random() * 9);
+  const low = Math.max(2, Math.min(open, close) - Math.random() * 9);
+  syntheticClose = close;
+  const candle = document.createElement('div');
+  candle.className = `candle ${close >= open ? 'up' : 'down'}`;
+  candle.setAttribute('aria-hidden', 'true');
+  const wick = document.createElement('span');
+  wick.className = 'wick';
+  wick.style.top = `${100 - high}%`;
+  wick.style.height = `${high - low}%`;
+  const body = document.createElement('span');
+  body.className = 'body';
+  body.style.top = `${100 - Math.max(open, close)}%`;
+  body.style.height = `${Math.max(2, Math.abs(close - open))}%`;
+  candle.append(wick, body);
+  return { candle, isUp: close >= open };
+}
 function renderSyntheticCandles() {
   const chart = document.getElementById('syntheticCandles');
   chart.replaceChildren();
-  let close = 50;
   for (let index = 0; index < 60; index += 1) {
-    const open = close;
-    close = Math.min(94, Math.max(6, open + (Math.random() - 0.49) * 18));
-    const high = Math.min(98, Math.max(open, close) + Math.random() * 9);
-    const low = Math.max(2, Math.min(open, close) - Math.random() * 9);
-    const candle = document.createElement('div');
-    candle.className = `candle ${close >= open ? 'up' : 'down'}`;
-    candle.setAttribute('aria-hidden', 'true');
-    const wick = document.createElement('span');
-    wick.className = 'wick';
-    wick.style.top = `${100 - high}%`;
-    wick.style.height = `${high - low}%`;
-    const body = document.createElement('span');
-    body.className = 'body';
-    body.style.top = `${100 - Math.max(open, close)}%`;
-    body.style.height = `${Math.max(2, Math.abs(close - open))}%`;
-    candle.append(wick, body);
-    chart.appendChild(candle);
+    chart.appendChild(createSyntheticCandle().candle);
   }
 }
 renderSyntheticCandles();
 document.getElementById('confirmPrediction').addEventListener('click', () => {
   const result = document.getElementById('predictionResult');
+  if (!selectedDirection) {
+    result.textContent = 'Choose Buy or Sell first. Result is synthetic, not a market prediction.';
+    return;
+  }
   if (!gameAttempts) {
     result.textContent = 'Attempts exhausted. The result is a simulation, not a market prediction.';
     return;
   }
+  const isWin = Math.random() > 0.5;
+  const candleDirection = selectedDirection === 'Buy' ? isWin : !isWin;
+  const chart = document.getElementById('syntheticCandles');
+  chart.appendChild(createSyntheticCandle(candleDirection).candle);
+  chart.firstElementChild?.remove();
   gameAttempts -= 1;
   document.getElementById('attemptCount').textContent = String(gameAttempts);
-  result.textContent = `Simulated ${Math.random() > 0.5 ? 'WIN' : 'LOSS'} — not a market prediction.`;
+  result.textContent = `Simulated ${isWin ? 'WIN' : 'LOSS'} — the one-hour synthetic chart moved. Not a market prediction.`;
+  chooseDirection(null);
 });
 
 async function initialize() {

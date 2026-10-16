@@ -18,6 +18,8 @@ Opening `index.html` directly from disk enables a browser-session preview for si
 
 	```sql
 	ALTER TABLE users ADD COLUMN display_name VARCHAR(80) NOT NULL DEFAULT '';
+	ALTER TABLE users ADD COLUMN timezone VARCHAR(64) NOT NULL DEFAULT 'UTC';
+	ALTER TABLE users ADD COLUMN base_currency CHAR(3) NOT NULL DEFAULT 'USD';
 	```
 	If you imported an earlier schema already, run `ALTER TABLE risk_settings ADD COLUMN last_changed_date DATE NULL;` once before deploying this version.
 3. Copy `config.example.php` to `config.php` in the deployed application directory. Fill in the database name, user, and password in `config.php`. Do not commit `config.php`.
