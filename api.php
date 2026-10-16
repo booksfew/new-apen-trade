@@ -98,9 +98,14 @@ try {
             }
 
             if ($action === 'register') {
-                $statement = $db->prepare('INSERT INTO users (email, password_hash) VALUES (:email, :password_hash)');
+                $display_name = trim((string) ($input['display_name'] ?? ''));
+                $display_name_length = preg_match_all('/./us', $display_name, $display_name_characters);
+                if ($display_name_length === false || $display_name_length < 2 || $display_name_length > 80) {
+                    respond(['error' => 'Display name must be between 2 and 80 characters.'], 422);
+                }
+                $statement = $db->prepare('INSERT INTO users (display_name, email, password_hash) VALUES (:display_name, :email, :password_hash)');
                 try {
-                    $statement->execute(['email' => $email, 'password_hash' => password_hash($password, PASSWORD_DEFAULT)]);
+                    $statement->execute(['display_name' => $display_name, 'email' => $email, 'password_hash' => password_hash($password, PASSWORD_DEFAULT)]);
                 } catch (PDOException $exception) {
                     if ($exception->getCode() === '23000') {
                         respond(['error' => 'An account with that email already exists.'], 409);
@@ -109,20 +114,22 @@ try {
                 }
                 $user_id = (int) $db->lastInsertId();
             } else {
-                $statement = $db->prepare('SELECT id, password_hash FROM users WHERE email = :email LIMIT 1');
+                $statement = $db->prepare('SELECT id, display_name, password_hash FROM users WHERE email = :email LIMIT 1');
                 $statement->execute(['email' => $email]);
                 $user = $statement->fetch();
                 if (!$user || !password_verify($password, $user['password_hash'])) {
                     respond(['error' => 'Email or password is incorrect.'], 401);
                 }
                 $user_id = (int) $user['id'];
+                $display_name = $user['display_name'];
             }
 
             session_regenerate_id(true);
             $_SESSION['user_id'] = $user_id;
             $_SESSION['email'] = $email;
+            $_SESSION['display_name'] = $display_name;
             $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-            respond(['user' => ['email' => $email], 'csrf_token' => $_SESSION['csrf_token']]);
+            respond(['user' => ['email' => $email, 'display_name' => $display_name], 'csrf_token' => $_SESSION['csrf_token']]);
         }
 
         if ($action === 'logout') {
@@ -266,7 +273,7 @@ try {
         $aggregate = $stats_query->fetch();
         $total_trades = (int) $aggregate['total_trades'];
         respond([
-            'user' => ['email' => $_SESSION['email'] ?? ''],
+            'user' => ['email' => $_SESSION['email'] ?? '', 'display_name' => $_SESSION['display_name'] ?? ''],
             'accounts' => $accounts_query->fetchAll(),
             'trades' => $trades,
             'risk' => $risk,
@@ -277,7 +284,7 @@ try {
 
     if ($method === 'GET' && $action === 'me') {
         require_user();
-        respond(['user' => ['email' => $_SESSION['email'] ?? ''], 'csrf_token' => $_SESSION['csrf_token']]);
+        respond(['user' => ['email' => $_SESSION['email'] ?? '', 'display_name' => $_SESSION['display_name'] ?? ''], 'csrf_token' => $_SESSION['csrf_token']]);
     }
 
     respond(['error' => 'Unknown action.'], 404);

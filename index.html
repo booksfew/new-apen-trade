@@ -30,6 +30,7 @@
       }
 
       * { box-sizing: border-box; }
+      [hidden] { display:none !important; }
       html, body { margin: 0; background: radial-gradient(circle at top left, rgba(59,130,246,0.18), transparent 25%), var(--bg); color: var(--text); font-family: Inter, "Segoe UI", sans-serif; }
       body { min-height: 100vh; }
       button, input, select, textarea { font: inherit; }
@@ -209,7 +210,7 @@
         </div>
         <div class="nav-group" id="workspaceNav" hidden>
           <div class="nav-label">Workspace</div>
-          <button class="nav-item" data-page="dashboard"><span>Dashboard</span><span class="dot"></span></button>
+          <button class="nav-item" data-page="dashboard"><span>Account Overview</span><span class="dot"></span></button>
           <button class="nav-item" data-page="accounts"><span>Trading Accounts</span><span class="dot"></span></button>
           <button class="nav-item" data-page="history"><span>Trading History</span><span class="dot"></span></button>
           <button class="nav-item" data-page="calendar"><span>Trading Calendar</span><span class="dot"></span></button>
@@ -276,8 +277,10 @@
             <div class="auth-card">
               <div class="auth-toggle"><button class="active" type="button" data-auth-mode="login">Login</button><button type="button" data-auth-mode="register">Sign up</button></div>
               <form id="authForm" class="field-grid">
+                <div class="field" data-register-only hidden><label for="authDisplayName">Display name</label><input id="authDisplayName" type="text" autocomplete="name" maxlength="80" placeholder="Your name" /></div>
                 <div class="field"><label for="authEmail">Email</label><input id="authEmail" type="email" autocomplete="email" required maxlength="254" placeholder="trader@example.com" /></div>
                 <div class="field"><label for="authPassword">Password</label><input id="authPassword" type="password" autocomplete="current-password" required minlength="12" maxlength="72" placeholder="At least 12 characters" /></div>
+                <div class="field" data-register-only hidden><label for="authConfirmPassword">Confirm password</label><input id="authConfirmPassword" type="password" autocomplete="new-password" minlength="12" maxlength="72" placeholder="Re-enter your password" /></div>
                 <div id="authMessage" class="status-banner" role="status" hidden></div>
                 <div class="auth-actions"><button class="ghost-btn" type="button" data-page="home">Cancel</button><button class="primary-btn" id="authSubmit" type="submit">Sign in</button></div>
               </form>

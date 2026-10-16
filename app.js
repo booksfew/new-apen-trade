@@ -13,6 +13,7 @@ const state = {
 
 const LOCAL_PREVIEW = window.location.protocol === 'file:';
 const PREVIEW_USER_KEY = 'tradersheild-preview-user';
+const PREVIEW_DISPLAY_NAME_KEY = 'tradersheild-preview-display-name';
 const PREVIEW_USERS_KEY = 'tradersheild-preview-users';
 
 const toast = document.getElementById('toast');
@@ -78,34 +79,43 @@ async function previewApi(action, method, data) {
     }
     let users = [];
     try {
-      users = JSON.parse(sessionStorage.getItem(PREVIEW_USERS_KEY) || '[]');
+      users = JSON.parse(sessionStorage.getItem(PREVIEW_USERS_KEY) || '[]')
+        .map(user => typeof user === 'string' ? { email: user, display_name: user.split('@')[0] } : user);
     } catch {
       users = [];
     }
+    let displayName = String(data?.display_name || '').trim();
     if (action === 'register') {
-      if (users.includes(email)) throw new Error('This email already has a local preview account. Sign in instead.');
-      users.push(email);
+      if (displayName.length < 2 || displayName.length > 80) {
+        throw new Error('Display name must be between 2 and 80 characters.');
+      }
+      if (users.some(user => user.email === email)) throw new Error('This email already has a local preview account. Sign in instead.');
+      users.push({ email, display_name: displayName });
       sessionStorage.setItem(PREVIEW_USERS_KEY, JSON.stringify(users));
-    } else if (!users.includes(email)) {
-      throw new Error('No local preview account found. Choose Sign up first.');
+    } else {
+      const user = users.find(item => item.email === email);
+      if (!user) throw new Error('No local preview account found. Choose Sign up first.');
+      displayName = user.display_name;
     }
     sessionStorage.setItem(PREVIEW_USER_KEY, email);
-    return { user: { email }, csrf_token: 'local-preview-only' };
+    sessionStorage.setItem(PREVIEW_DISPLAY_NAME_KEY, displayName);
+    return { user: { email, display_name: displayName }, csrf_token: 'local-preview-only' };
   }
 
   if (action === 'logout') {
     sessionStorage.removeItem(PREVIEW_USER_KEY);
+    sessionStorage.removeItem(PREVIEW_DISPLAY_NAME_KEY);
     return { ok: true };
   }
   if (!activeEmail) throw new Error('Please sign in to continue.');
 
   const record = previewRecord(activeEmail);
-  if (action === 'me') return { user: { email: activeEmail }, csrf_token: 'local-preview-only' };
+  if (action === 'me') return { user: { email: activeEmail, display_name: sessionStorage.getItem(PREVIEW_DISPLAY_NAME_KEY) || '' }, csrf_token: 'local-preview-only' };
   if (action === 'state') {
     const wins = record.trades.filter(trade => Number(trade.pnl) > 0).length;
     const totalPnl = record.trades.reduce((sum, trade) => sum + Number(trade.pnl), 0);
     return {
-      user: { email: activeEmail },
+      user: { email: activeEmail, display_name: sessionStorage.getItem(PREVIEW_DISPLAY_NAME_KEY) || '' },
       accounts: record.accounts,
       trades: [...record.trades].sort((left, right) => right.date.localeCompare(left.date)),
       risk: record.risk,
@@ -404,7 +414,7 @@ async function loadState() {
   renderHistory();
   renderDashboard();
   const authAction = document.getElementById('authAction');
-  authAction.textContent = state.user.email;
+  authAction.textContent = state.user.display_name || state.user.email;
   authAction.dataset.page = 'settings';
   document.getElementById('logoutBtn').hidden = false;
 }
@@ -443,6 +453,10 @@ document.querySelectorAll('.auth-toggle button').forEach(button => {
     document.querySelectorAll('.auth-toggle button').forEach(tab => tab.classList.toggle('active', tab === button));
     document.getElementById('authSubmit').textContent = state.authMode === 'register' ? 'Create account' : 'Sign in';
     document.getElementById('authPassword').autocomplete = state.authMode === 'register' ? 'new-password' : 'current-password';
+    document.querySelectorAll('[data-register-only]').forEach(field => {
+      field.hidden = state.authMode !== 'register';
+      field.querySelector('input').required = state.authMode === 'register';
+    });
     clearAuthMessage();
   });
 });
@@ -453,9 +467,14 @@ document.getElementById('authForm').addEventListener('submit', async event => {
   const submit = document.getElementById('authSubmit');
   submit.disabled = true;
   try {
+    const password = document.getElementById('authPassword').value;
+    if (state.authMode === 'register' && password !== document.getElementById('authConfirmPassword').value) {
+      throw new Error('Passwords do not match.');
+    }
     const result = await api(state.authMode, 'POST', {
+      display_name: document.getElementById('authDisplayName').value.trim(),
       email: document.getElementById('authEmail').value,
-      password: document.getElementById('authPassword').value,
+      password,
     });
     state.user = result.user;
     await loadState();
